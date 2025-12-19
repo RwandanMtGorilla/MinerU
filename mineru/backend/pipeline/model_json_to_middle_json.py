@@ -186,6 +186,57 @@ def result_to_middle_json(model_list, images_list, pdf_doc, image_writer, lang=N
             page_w, page_h = map(int, page.get_size())
             page_info = make_page_info_dict([], page_index, page_w, page_h, [])
         middle_json["pdf_info"].append(page_info)
+        
+        """如果有ocr_enable=False，但是又有np_img（说明提取不到文字），则说明是扫描件的文字块或者Category 15"""
+        """为了保证效果，整块转为图片（Table类型）返回"""
+        if not ocr_enable:
+            page_pil_img = image_dict["img_pil"]
+            page_img_md5 = bytes_md5(page_pil_img.tobytes())
+            scale = image_dict["scale"]
+            
+            for i, block in enumerate(page_info['preproc_blocks']):
+                if block['type'] in ['text', 'title']:
+                    need_convert = False
+                    for line in block['lines']:
+                        for span in line['spans']:
+                            if 'np_img' in span:
+                                need_convert = True
+                                break
+                        if need_convert:
+                            break
+                    
+                    if need_convert:
+                        # 构造fake table span
+                        fake_span = {
+                            'type': ContentType.TABLE,
+                            'bbox': block['bbox']
+                        }
+                        # 切图
+                        fake_span = cut_image_and_table(
+                            fake_span, page_pil_img, page_img_md5, page_index, image_writer, scale=scale
+                        )
+                        
+                        # 重构block为table类型
+                        new_block = {
+                            'type': BlockType.TABLE,
+                            'bbox': block['bbox'],
+                            'blocks': [
+                                {
+                                    'type': BlockType.TABLE_BODY,
+                                    'bbox': block['bbox'],
+                                    'lines': [
+                                        {
+                                            'bbox': block['bbox'], # lines也有bbox
+                                            'spans': [fake_span]
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                        # 替换原block
+                        page_info['preproc_blocks'][i] = new_block
+                        # 清理原block的lines引用（已有new_block替代）
+                        block.clear() # 甚至可以清空，但替换列表元素已经足够
 
     """后置ocr处理"""
     need_ocr_list = []
