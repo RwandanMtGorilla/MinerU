@@ -206,9 +206,10 @@ def result_to_middle_json(model_list, images_list, pdf_doc, image_writer, lang=N
                             break
                     
                     if need_convert:
-                        # 构造fake table span
+                        # 构造fake image span (使用Image类型，保持语义准确)
+                        # 注意：虽然这里用IMAGE类型，但cut_image_and_table通用
                         fake_span = {
-                            'type': ContentType.TABLE,
+                            'type': ContentType.IMAGE,
                             'bbox': block['bbox']
                         }
                         # 切图
@@ -216,27 +217,23 @@ def result_to_middle_json(model_list, images_list, pdf_doc, image_writer, lang=N
                             fake_span, page_pil_img, page_img_md5, page_index, image_writer, scale=scale
                         )
                         
-                        # 重构block为table类型
+                        # 重构block (保持原有的BlockType，如Text或Title)
+                        # 将内容替换为单一行、单一图片Span
+                        # 注意要保留block的基本结构
                         new_block = {
-                            'type': BlockType.TABLE,
+                            'type': block['type'], # 保持原类型
                             'bbox': block['bbox'],
-                            'blocks': [
+                            'lines': [
                                 {
-                                    'type': BlockType.TABLE_BODY,
-                                    'bbox': block['bbox'],
-                                    'lines': [
-                                        {
-                                            'bbox': block['bbox'], # lines也有bbox
-                                            'spans': [fake_span]
-                                        }
-                                    ]
+                                    'bbox': block['bbox'], 
+                                    'spans': [fake_span]
                                 }
                             ]
                         }
                         # 替换原block
                         page_info['preproc_blocks'][i] = new_block
-                        # 清理原block的lines引用（已有new_block替代）
-                        block.clear() # 甚至可以清空，但替换列表元素已经足够
+                        # 清理原block
+                        block.clear()
 
     """后置ocr处理"""
     need_ocr_list = []

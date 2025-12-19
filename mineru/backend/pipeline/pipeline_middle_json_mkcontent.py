@@ -182,6 +182,11 @@ def merge_para_with_text(para_block):
                             para_text += f'{content} '
                     elif span_type == ContentType.INTERLINE_EQUATION:
                         para_text += content
+            
+            # Add handling for Image/Table spans in Text blocks (fallback mechanism)
+            elif span_type in [ContentType.IMAGE, ContentType.TABLE]:
+                if span.get('image_path', ''):
+                     para_text += f"![]({span.get('image_path', '')})"
             else:
                 continue
 
