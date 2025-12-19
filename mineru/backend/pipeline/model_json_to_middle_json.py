@@ -13,7 +13,7 @@ from mineru.utils.block_pre_proc import prepare_block_bboxes, process_groups
 from mineru.utils.block_sort import sort_blocks_by_bbox
 from mineru.utils.boxbase import calculate_overlap_area_in_bbox1_area_ratio
 from mineru.utils.cut_image import cut_image_and_table
-from mineru.utils.enum_class import ContentType
+from mineru.utils.enum_class import ContentType, BlockType
 from mineru.utils.llm_aided import llm_aided_title
 from mineru.utils.model_utils import clean_memory
 from mineru.backend.pipeline.pipeline_magic_model import MagicModel
