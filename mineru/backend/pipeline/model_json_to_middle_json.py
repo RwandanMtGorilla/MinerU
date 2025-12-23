@@ -210,7 +210,8 @@ def result_to_middle_json(model_list, images_list, pdf_doc, image_writer, lang=N
                         # 注意：虽然这里用IMAGE类型，但cut_image_and_table通用
                         fake_span = {
                             'type': ContentType.IMAGE,
-                            'bbox': block['bbox']
+                            'bbox': block['bbox'],
+                            'content': ''  # Prevent KeyError in para_split
                         }
                         # 切图
                         fake_span = cut_image_and_table(
