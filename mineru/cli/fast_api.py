@@ -201,49 +201,41 @@ Options: ch, ch_server, ch_lite, en, korean, japan, chinese_cht, ta, te, ka, th,
             # 如果语言列表长度不匹配，使用第一个语言或默认"ch"
             actual_lang_list = [actual_lang_list[0] if actual_lang_list else "ch"] * len(pdf_file_names)
 
-        # 获取超时配置
-        request_timeout = get_api_request_timeout()
-
-        # 构建 aio_do_parse 协程
-        parse_coro = aio_do_parse(
-            output_dir=unique_dir,
-            pdf_file_names=pdf_file_names,
-            pdf_bytes_list=pdf_bytes_list,
-            p_lang_list=actual_lang_list,
-            backend=backend,
-            parse_method=parse_method,
-            formula_enable=formula_enable,
-            table_enable=table_enable,
-            server_url=server_url,
-            f_draw_layout_bbox=False,
-            f_draw_span_bbox=False,
-            f_dump_md=return_md,
-            f_dump_middle_json=return_middle_json,
-            f_dump_model_output=return_model_output,
-            f_dump_orig_pdf=False,
-            f_dump_content_list=return_content_list,
-            start_page_id=start_page_id,
-            end_page_id=end_page_id,
-            **config
-        )
-
-        # 调用异步处理函数（带超时控制）
-        if request_timeout > 0:
-            try:
-                await asyncio.wait_for(parse_coro, timeout=request_timeout)
-            except asyncio.TimeoutError:
-                logger.warning(f"Request timeout after {request_timeout}s for directory: {unique_dir}")
-                cleanup_directory(unique_dir)
-                return JSONResponse(
-                    status_code=504,
-                    content={
-                        "error": "Request timeout",
-                        "detail": f"PDF processing exceeded the timeout limit of {request_timeout} seconds.",
-                        "timeout_seconds": request_timeout
-                    }
-                )
-        else:
-            await parse_coro
+        # 调用异步处理函数（超时已在 aio_do_parse 内部处理）
+        try:
+            await aio_do_parse(
+                output_dir=unique_dir,
+                pdf_file_names=pdf_file_names,
+                pdf_bytes_list=pdf_bytes_list,
+                p_lang_list=actual_lang_list,
+                backend=backend,
+                parse_method=parse_method,
+                formula_enable=formula_enable,
+                table_enable=table_enable,
+                server_url=server_url,
+                f_draw_layout_bbox=False,
+                f_draw_span_bbox=False,
+                f_dump_md=return_md,
+                f_dump_middle_json=return_middle_json,
+                f_dump_model_output=return_model_output,
+                f_dump_orig_pdf=False,
+                f_dump_content_list=return_content_list,
+                start_page_id=start_page_id,
+                end_page_id=end_page_id,
+                **config
+            )
+        except asyncio.TimeoutError:
+            logger.warning(f"Request timeout for directory: {unique_dir}")
+            cleanup_directory(unique_dir)
+            request_timeout = get_api_request_timeout()
+            return JSONResponse(
+                status_code=504,
+                content={
+                    "error": "Request timeout",
+                    "detail": f"PDF processing exceeded the timeout limit of {request_timeout} seconds.",
+                    "timeout_seconds": request_timeout
+                }
+            )
 
         # 根据 response_format_zip 决定返回类型
         if response_format_zip:

@@ -5,6 +5,7 @@ import json
 import os
 import copy
 from pathlib import Path
+from concurrent.futures import ProcessPoolExecutor
 
 from loguru import logger
 import pypdfium2 as pdfium
@@ -18,6 +19,7 @@ from mineru.backend.vlm.vlm_middle_json_mkcontent import union_make as vlm_union
 from mineru.backend.vlm.vlm_analyze import doc_analyze as vlm_doc_analyze
 from mineru.backend.vlm.vlm_analyze import aio_doc_analyze as aio_vlm_doc_analyze
 from mineru.utils.pdf_page_id import get_end_page_id
+from mineru.utils.os_env_config import get_api_request_timeout
 
 if os.getenv("MINERU_LMDEPLOY_DEVICE", "") == "maca":
     import torch
@@ -381,14 +383,35 @@ async def aio_do_parse(
     pdf_bytes_list = _prepare_pdf_bytes(pdf_bytes_list, start_page_id, end_page_id)
 
     if backend == "pipeline":
-        # 使用 asyncio.to_thread 将同步函数包装为异步，以支持超时控制
-        await asyncio.to_thread(
-            _process_pipeline,
-            output_dir, pdf_file_names, pdf_bytes_list, p_lang_list,
-            parse_method, formula_enable, table_enable,
-            f_draw_layout_bbox, f_draw_span_bbox, f_dump_md, f_dump_middle_json,
-            f_dump_model_output, f_dump_orig_pdf, f_dump_content_list, f_make_md_mode
-        )
+        request_timeout = get_api_request_timeout()
+
+        if request_timeout > 0:
+            # 使用 ProcessPoolExecutor + future.result(timeout) 实现真正超时
+            with ProcessPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(
+                    _process_pipeline,
+                    output_dir, pdf_file_names, pdf_bytes_list, p_lang_list,
+                    parse_method, formula_enable, table_enable,
+                    f_draw_layout_bbox, f_draw_span_bbox, f_dump_md, f_dump_middle_json,
+                    f_dump_model_output, f_dump_orig_pdf, f_dump_content_list, f_make_md_mode
+                )
+                try:
+                    # 关键：在这里设置超时，超时会抛出 concurrent.futures.TimeoutError
+                    future.result(timeout=request_timeout)
+                except TimeoutError:
+                    # 真正终止子进程
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    # 转换为 asyncio.TimeoutError 以便上层统一处理
+                    raise asyncio.TimeoutError(f"Pipeline processing timeout after {request_timeout}s")
+        else:
+            # 无超时限制
+            await asyncio.to_thread(
+                _process_pipeline,
+                output_dir, pdf_file_names, pdf_bytes_list, p_lang_list,
+                parse_method, formula_enable, table_enable,
+                f_draw_layout_bbox, f_draw_span_bbox, f_dump_md, f_dump_middle_json,
+                f_dump_model_output, f_dump_orig_pdf, f_dump_content_list, f_make_md_mode
+            )
     else:
         if backend.startswith("vlm-"):
             backend = backend[4:]
