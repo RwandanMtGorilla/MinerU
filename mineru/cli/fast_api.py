@@ -1,6 +1,7 @@
 import uuid
 import os
 import re
+import shutil
 import tempfile
 import asyncio
 import uvicorn
@@ -19,6 +20,7 @@ from base64 import b64encode
 from mineru.cli.common import aio_do_parse, read_fn, pdf_suffixes, image_suffixes
 from mineru.utils.cli_parser import arg_parse
 from mineru.utils.guess_suffix_or_lang import guess_suffix_by_path
+from mineru.utils.os_env_config import get_api_request_timeout
 from mineru.version import __version__
 
 # 并发控制器
@@ -83,6 +85,15 @@ def cleanup_file(file_path: str) -> None:
             os.remove(file_path)
     except Exception as e:
         logger.warning(f"fail clean file {file_path}: {e}")
+
+def cleanup_directory(dir_path: str) -> None:
+    """清理临时输出目录"""
+    try:
+        if os.path.exists(dir_path):
+            shutil.rmtree(dir_path)
+            logger.info(f"Cleaned up directory: {dir_path}")
+    except Exception as e:
+        logger.warning(f"Failed to clean directory {dir_path}: {e}")
 
 def encode_image(image_path: str) -> str:
     """Encode image using base64"""
@@ -190,8 +201,11 @@ Options: ch, ch_server, ch_lite, en, korean, japan, chinese_cht, ta, te, ka, th,
             # 如果语言列表长度不匹配，使用第一个语言或默认"ch"
             actual_lang_list = [actual_lang_list[0] if actual_lang_list else "ch"] * len(pdf_file_names)
 
-        # 调用异步处理函数
-        await aio_do_parse(
+        # 获取超时配置
+        request_timeout = get_api_request_timeout()
+
+        # 构建 aio_do_parse 协程
+        parse_coro = aio_do_parse(
             output_dir=unique_dir,
             pdf_file_names=pdf_file_names,
             pdf_bytes_list=pdf_bytes_list,
@@ -212,6 +226,24 @@ Options: ch, ch_server, ch_lite, en, korean, japan, chinese_cht, ta, te, ka, th,
             end_page_id=end_page_id,
             **config
         )
+
+        # 调用异步处理函数（带超时控制）
+        if request_timeout > 0:
+            try:
+                await asyncio.wait_for(parse_coro, timeout=request_timeout)
+            except asyncio.TimeoutError:
+                logger.warning(f"Request timeout after {request_timeout}s for directory: {unique_dir}")
+                cleanup_directory(unique_dir)
+                return JSONResponse(
+                    status_code=504,
+                    content={
+                        "error": "Request timeout",
+                        "detail": f"PDF processing exceeded the timeout limit of {request_timeout} seconds.",
+                        "timeout_seconds": request_timeout
+                    }
+                )
+        else:
+            await parse_coro
 
         # 根据 response_format_zip 决定返回类型
         if response_format_zip:
@@ -304,6 +336,7 @@ Options: ch, ch_server, ch_lite, en, korean, japan, chinese_cht, ta, te, ka, th,
             )
     except Exception as e:
         logger.exception(e)
+        cleanup_directory(unique_dir)
         return JSONResponse(
             status_code=500,
             content={"error": f"Failed to process file: {str(e)}"}

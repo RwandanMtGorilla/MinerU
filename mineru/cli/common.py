@@ -1,4 +1,5 @@
 # Copyright (c) Opendatalab. All rights reserved.
+import asyncio
 import io
 import json
 import os
@@ -380,8 +381,9 @@ async def aio_do_parse(
     pdf_bytes_list = _prepare_pdf_bytes(pdf_bytes_list, start_page_id, end_page_id)
 
     if backend == "pipeline":
-        # pipeline模式暂不支持异步，使用同步处理方式
-        _process_pipeline(
+        # 使用 asyncio.to_thread 将同步函数包装为异步，以支持超时控制
+        await asyncio.to_thread(
+            _process_pipeline,
             output_dir, pdf_file_names, pdf_bytes_list, p_lang_list,
             parse_method, formula_enable, table_enable,
             f_draw_layout_bbox, f_draw_span_bbox, f_dump_md, f_dump_middle_json,

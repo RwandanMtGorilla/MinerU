@@ -11,6 +11,23 @@ def get_load_images_timeout() -> int:
     return get_value_from_string(env_value, 300)
 
 
+def get_api_request_timeout() -> int:
+    """获取 API 请求超时时间（秒）
+
+    从环境变量 MINERU_API_REQUEST_TIMEOUT 读取。
+    返回 0 表示不限制超时时间。
+    """
+    env_value = os.getenv('MINERU_API_REQUEST_TIMEOUT', None)
+    if env_value is not None:
+        try:
+            timeout = int(env_value)
+            if timeout >= 0:
+                return timeout
+        except ValueError:
+            pass
+    return 0  # 默认不限制
+
+
 def get_value_from_string(env_value: str, default_value: int) -> int:
     if env_value is not None:
         try:
