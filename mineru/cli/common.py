@@ -5,7 +5,7 @@ import json
 import os
 import copy
 from pathlib import Path
-from concurrent.futures import ProcessPoolExecutor
+import multiprocessing
 
 from loguru import logger
 import pypdfium2 as pdfium
@@ -225,6 +225,15 @@ def _process_pipeline(
         )
 
 
+def _process_pipeline_wrapper(result_queue, *args):
+    """在子进程中执行 _process_pipeline，通过队列返回结果或异常"""
+    try:
+        _process_pipeline(*args)
+        result_queue.put(("success", None))
+    except Exception as e:
+        result_queue.put(("error", str(e)))
+
+
 async def _async_process_vlm(
         output_dir,
         pdf_file_names,
@@ -386,23 +395,40 @@ async def aio_do_parse(
         request_timeout = get_api_request_timeout()
 
         if request_timeout > 0:
-            # 使用 ProcessPoolExecutor + future.result(timeout) 实现真正超时
-            with ProcessPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(
-                    _process_pipeline,
+            # 使用 spawn 上下文，避免子进程继承父进程的 socket 文件描述符
+            ctx = multiprocessing.get_context('spawn')
+            result_queue = ctx.Queue()
+            process = ctx.Process(
+                target=_process_pipeline_wrapper,
+                args=(
+                    result_queue,
                     output_dir, pdf_file_names, pdf_bytes_list, p_lang_list,
                     parse_method, formula_enable, table_enable,
                     f_draw_layout_bbox, f_draw_span_bbox, f_dump_md, f_dump_middle_json,
                     f_dump_model_output, f_dump_orig_pdf, f_dump_content_list, f_make_md_mode
                 )
-                try:
-                    # 关键：在这里设置超时，超时会抛出 concurrent.futures.TimeoutError
-                    future.result(timeout=request_timeout)
-                except TimeoutError:
-                    # 真正终止子进程
-                    executor.shutdown(wait=False, cancel_futures=True)
-                    # 转换为 asyncio.TimeoutError 以便上层统一处理
-                    raise asyncio.TimeoutError(f"Pipeline processing timeout after {request_timeout}s")
+            )
+            process.start()
+            process.join(timeout=request_timeout)
+
+            if process.is_alive():
+                # 超时，强制终止进程
+                logger.warning(f"Process {process.pid} timeout after {request_timeout}s, terminating...")
+                process.terminate()
+                process.join(timeout=5)
+
+                if process.is_alive():
+                    logger.warning(f"Process {process.pid} did not terminate, killing...")
+                    process.kill()
+                    process.join()
+
+                raise asyncio.TimeoutError(f"Pipeline processing timeout after {request_timeout}s")
+
+            # 检查子进程执行结果
+            if not result_queue.empty():
+                status, error = result_queue.get_nowait()
+                if status == "error" and error is not None:
+                    raise Exception(error)
         else:
             # 无超时限制
             await asyncio.to_thread(
