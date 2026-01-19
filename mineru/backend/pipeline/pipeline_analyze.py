@@ -31,12 +31,17 @@ class ModelSingleton:
         table_enable=None,
     ):
         key = (formula_enable, table_enable)
+        logger.info(f'get_model called: key={key}, type(formula_enable)={type(formula_enable)}, type(table_enable)={type(table_enable)}')
+        logger.info(f'existing keys in cache: {list(self._models.keys())}')
         if key not in self._models:
+            logger.info(f'cache miss, initializing model for key={key}')
             self._models[key] = custom_model_init(
                 lang=lang,
                 formula_enable=formula_enable,
                 table_enable=table_enable,
             )
+        else:
+            logger.info(f'cache hit for key={key}')
         return self._models[key]
 
 
