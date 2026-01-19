@@ -38,13 +38,12 @@ def _get_preload_config() -> Optional[dict]:
 _request_semaphore: Optional[asyncio.Semaphore] = None
 
 
-def preload_models(lang='ch', formula_enable=True, table_enable=True):
+def preload_models(formula_enable=True, table_enable=True):
     """在服务启动前预加载模型"""
     from mineru.backend.pipeline.pipeline_analyze import ModelSingleton
     logger.info('Preloading models...')
     model_manager = ModelSingleton()
     model_manager.get_model(
-        lang=lang,
         formula_enable=formula_enable,
         table_enable=table_enable,
     )
@@ -375,7 +374,6 @@ def main(ctx, host, port, reload, preload, **kwargs):
     # 设置预加载配置到环境变量，供 lifespan 使用（确保 uvicorn 子进程可见）
     if preload:
         preload_config = {
-            'lang': kwargs.get('lang', 'ch'),
             'formula_enable': kwargs.get('formula_enable', True),
             'table_enable': kwargs.get('table_enable', True),
         }

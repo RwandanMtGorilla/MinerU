@@ -30,7 +30,7 @@ class ModelSingleton:
         formula_enable=None,
         table_enable=None,
     ):
-        key = (lang, formula_enable, table_enable)
+        key = (formula_enable, table_enable)
         if key not in self._models:
             self._models[key] = custom_model_init(
                 lang=lang,
