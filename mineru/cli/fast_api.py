@@ -21,6 +21,19 @@ from mineru.utils.cli_parser import arg_parse
 from mineru.utils.guess_suffix_or_lang import guess_suffix_by_path
 from mineru.version import __version__
 
+
+def preload_models(lang='ch', formula_enable=True, table_enable=True):
+    """在服务启动前预加载模型"""
+    from mineru.backend.pipeline.pipeline_analyze import ModelSingleton
+    logger.info('Preloading models...')
+    model_manager = ModelSingleton()
+    model_manager.get_model(
+        lang=lang,
+        formula_enable=formula_enable,
+        table_enable=table_enable,
+    )
+    logger.info('Models preloaded successfully!')
+
 # 并发控制器
 _request_semaphore: Optional[asyncio.Semaphore] = None
 
@@ -315,7 +328,8 @@ Options: ch, ch_server, ch_lite, en, korean, japan, chinese_cht, ta, te, ka, th,
 @click.option('--host', default='127.0.0.1', help='Server host (default: 127.0.0.1)')
 @click.option('--port', default=8000, type=int, help='Server port (default: 8000)')
 @click.option('--reload', is_flag=True, help='Enable auto-reload (development mode)')
-def main(ctx, host, port, reload, **kwargs):
+@click.option('--preload', is_flag=True, help='Preload models on startup (slower startup, faster first request)')
+def main(ctx, host, port, reload, preload, **kwargs):
 
     kwargs.update(arg_parse(ctx))
 
@@ -332,6 +346,13 @@ def main(ctx, host, port, reload, **kwargs):
     """启动MinerU FastAPI服务器的命令行入口"""
     print(f"Start MinerU FastAPI Service: http://{host}:{port}")
     print(f"API documentation: http://{host}:{port}/docs")
+
+    if preload:
+        preload_models(
+            lang=kwargs.get('lang', 'ch'),
+            formula_enable=kwargs.get('formula_enable', True),
+            table_enable=kwargs.get('table_enable', True),
+        )
 
     uvicorn.run(
         "mineru.cli.fast_api:app",
