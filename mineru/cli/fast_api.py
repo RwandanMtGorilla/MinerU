@@ -44,8 +44,8 @@ def preload_models(formula_enable=True, table_enable=True):
     logger.info('Preloading models...')
     model_manager = ModelSingleton()
     model_manager.get_model(
-        formula_enable=formula_enable,
-        table_enable=table_enable,
+        formula_enable=False,
+        table_enable=False,
     )
     logger.info('Models preloaded successfully!')
 
