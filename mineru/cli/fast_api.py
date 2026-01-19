@@ -12,6 +12,7 @@ from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from starlette.background import BackgroundTask
+from contextlib import asynccontextmanager
 from typing import List, Optional
 from loguru import logger
 from base64 import b64encode
@@ -20,6 +21,21 @@ from mineru.cli.common import aio_do_parse, read_fn, pdf_suffixes, image_suffixe
 from mineru.utils.cli_parser import arg_parse
 from mineru.utils.guess_suffix_or_lang import guess_suffix_by_path
 from mineru.version import __version__
+
+# 预加载配置（从环境变量读取，支持 uvicorn 重载）
+def _get_preload_config() -> Optional[dict]:
+    """从环境变量读取预加载配置"""
+    config_str = os.getenv("MINERU_PRELOAD_CONFIG")
+    if config_str:
+        import ast
+        try:
+            return ast.literal_eval(config_str)
+        except (ValueError, SyntaxError):
+            return None
+    return None
+
+# 并发控制器
+_request_semaphore: Optional[asyncio.Semaphore] = None
 
 
 def preload_models(lang='ch', formula_enable=True, table_enable=True):
@@ -34,8 +50,16 @@ def preload_models(lang='ch', formula_enable=True, table_enable=True):
     )
     logger.info('Models preloaded successfully!')
 
-# 并发控制器
-_request_semaphore: Optional[asyncio.Semaphore] = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """FastAPI 生命周期管理器，用于在应用启动时预加载模型"""
+    # 启动时执行
+    preload_config = _get_preload_config()
+    if preload_config is not None:
+        preload_models(**preload_config)
+    yield
+    # 关闭时执行（如需要可在此添加清理逻辑）
 
 # 并发控制依赖函数
 async def limit_concurrency():
@@ -55,6 +79,7 @@ def create_app():
     # To disable the FastAPI docs and schema endpoints, set the environment variable MINERU_API_ENABLE_FASTAPI_DOCS=0.
     enable_docs = str(os.getenv("MINERU_API_ENABLE_FASTAPI_DOCS", "1")).lower() in ("1", "true", "yes")
     app = FastAPI(
+        lifespan=lifespan,
         openapi_url="/openapi.json" if enable_docs else None,
         docs_url="/docs" if enable_docs else None,
         redoc_url="/redoc" if enable_docs else None,
@@ -347,12 +372,14 @@ def main(ctx, host, port, reload, preload, **kwargs):
     print(f"Start MinerU FastAPI Service: http://{host}:{port}")
     print(f"API documentation: http://{host}:{port}/docs")
 
+    # 设置预加载配置到环境变量，供 lifespan 使用（确保 uvicorn 子进程可见）
     if preload:
-        preload_models(
-            lang=kwargs.get('lang', 'ch'),
-            formula_enable=kwargs.get('formula_enable', True),
-            table_enable=kwargs.get('table_enable', True),
-        )
+        preload_config = {
+            'lang': kwargs.get('lang', 'ch'),
+            'formula_enable': kwargs.get('formula_enable', True),
+            'table_enable': kwargs.get('table_enable', True),
+        }
+        os.environ["MINERU_PRELOAD_CONFIG"] = str(preload_config)
 
     uvicorn.run(
         "mineru.cli.fast_api:app",
