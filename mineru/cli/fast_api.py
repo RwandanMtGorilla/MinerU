@@ -11,7 +11,7 @@ import glob
 from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, FileResponse
-from starlette.background import BackgroundTask
+from starlette.background import BackgroundTask, BackgroundTasks
 from contextlib import asynccontextmanager
 from typing import List, Optional
 from loguru import logger
@@ -120,6 +120,19 @@ def cleanup_file(file_path: str) -> None:
             os.remove(file_path)
     except Exception as e:
         logger.warning(f"fail clean file {file_path}: {e}")
+
+
+def cleanup_directory(dir_path: str) -> None:
+    """清理输出目录（当 MINERU_CLEANUP_OUTPUT=1 时触发）"""
+    if os.getenv("MINERU_CLEANUP_OUTPUT", "0") != "1":
+        return
+    try:
+        import shutil
+        if os.path.exists(dir_path) and os.path.isdir(dir_path):
+            shutil.rmtree(dir_path)
+            logger.info(f"Cleaned up output directory: {dir_path}")
+    except Exception as e:
+        logger.warning(f"Failed to cleanup directory {dir_path}: {e}")
 
 def encode_image(image_path: str) -> str:
     """Encode image using base64"""
@@ -293,11 +306,14 @@ Options: ch, ch_server, ch_lite, en, korean, japan, chinese_cht, ta, te, ka, th,
                         for image_path in image_paths:
                             zf.write(image_path, arcname=os.path.join(safe_pdf_name, "images", os.path.basename(image_path)))
 
+            tasks = BackgroundTasks()
+            tasks.add_task(cleanup_file, zip_path)
+            tasks.add_task(cleanup_directory, unique_dir)
             return FileResponse(
                 path=zip_path,
                 media_type="application/zip",
                 filename="results.zip",
-                background=BackgroundTask(cleanup_file, zip_path)
+                background=tasks
             )
         else:
             # 构建 JSON 结果
@@ -337,7 +353,8 @@ Options: ch, ch_server, ch_lite, en, korean, japan, chinese_cht, ta, te, ka, th,
                     "backend": backend,
                     "version": __version__,
                     "results": result_dict
-                }
+                },
+                background=BackgroundTask(cleanup_directory, unique_dir)
             )
     except Exception as e:
         logger.exception(e)
