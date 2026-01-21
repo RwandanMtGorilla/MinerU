@@ -123,8 +123,8 @@ def cleanup_file(file_path: str) -> None:
 
 
 def cleanup_directory(dir_path: str) -> None:
-    """清理输出目录（当 MINERU_CLEANUP_OUTPUT=1 时触发）"""
-    if os.getenv("MINERU_CLEANUP_OUTPUT", "0") != "1":
+    """清理输出目录（默认清理，设置 MINERU_KEEP_OUTPUT=1 时保留）"""
+    if os.getenv("MINERU_KEEP_OUTPUT", "0") == "1":
         return
     try:
         import shutil
