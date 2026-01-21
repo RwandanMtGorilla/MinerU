@@ -51,6 +51,10 @@ class FileBasedDataWriter(DataWriter):
             path (str): the path of file, if the path is relative path, it will be joined with parent_dir.
             data (bytes): the data want to write
         """
+        # 环境变量开关：设置 MINERU_NO_SAVE=1 可跳过所有文件保存
+        if os.getenv("MINERU_NO_SAVE", "0") == "1":
+            return
+
         fn_path = path
         if not os.path.isabs(fn_path) and len(self._parent_dir) > 0:
             fn_path = os.path.join(self._parent_dir, path)
